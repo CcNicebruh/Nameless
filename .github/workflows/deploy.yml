@@ -1,26 +1,20 @@
-name: Deploy PHP site to Pages
+name: Deploy NamelessMC to GitHub Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: [ "main" ]
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  # Build job
   build:
     runs-on: ubuntu-latest
     steps:
@@ -30,33 +24,76 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
-          
+          php-version: '8.1'
+          extensions: mbstring, mysql, gd, xml, curl, zip
+      
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        
-      - name: Build static site
+      
+      - name: Create core config
         run: |
-          # Create a build directory
+          cat > core/config.php << EOF
+          <?php
+          \$GLOBALS['config'] = array(
+            'mysql' => array(
+              'host' => '${{ secrets.DB_HOST }}',
+              'port' => '3306',
+              'username' => '${{ secrets.DB_USER }}',
+              'password' => '${{ secrets.DB_PASS }}',
+              'db' => '${{ secrets.DB_NAME }}',
+              'prefix' => 'nl2_'
+            ),
+            'remember' => array(
+              'cookie_name' => 'nl2',
+              'cookie_expiry' => 604800
+            ),
+            'session' => array(
+              'session_name' => 'user',
+              'token_name' => 'token'
+            ),
+            'core' => array(
+              'path' => '/',
+              'friendly' => true,
+              'force_https' => true,
+              'force_www' => false,
+              'installation' => false
+            )
+          );
+          EOF
+
+      - name: Process PHP files
+        run: |
           mkdir build
-          # Loop through all PHP files and convert them to HTML
-          find . -name "*.php" -type f -exec sh -c '
-            for file do
-              filename=$(basename "$file" .php)
-              dirname=$(dirname "$file")
-              mkdir -p "build/$dirname"
-              php "$file" > "build/$dirname/$filename.html"
-            done
-          ' sh {} +
-          # Copy all non-PHP files
-          find . -type f ! -name "*.php" ! -path "./build/*" ! -path "./.git/*" -exec cp --parents {} build/ \;
+          # Create .htaccess for build directory
+          echo "RewriteEngine On" > build/.htaccess
+          echo "RewriteCond %{REQUEST_FILENAME} !-f" >> build/.htaccess
+          echo "RewriteRule ^(.*)$ index.html [L]" >> build/.htaccess
           
+          # Process main PHP files
+          for file in *.php; do
+            if [ -f "$file" ]; then
+              php "$file" > "build/${file%.php}.html" || true
+            fi
+          done
+          
+          # Copy static assets
+          cp -r custom build/
+          cp -r modules build/
+          cp -r uploads build/
+          cp -r core/assets build/core/
+          
+          # Remove PHP files from copied directories
+          find build -name "*.php" -type f -delete
+          
+          # Create robots.txt
+          echo "User-agent: *" > build/robots.txt
+          echo "Allow: /" >> build/robots.txt
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./build
 
-  # Deployment job
   deploy:
     environment:
       name: github-pages

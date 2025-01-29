@@ -2,9 +2,9 @@ name: Deploy NamelessMC to GitHub Pages
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: [ "prod" ]
   pull_request:
-    branches: [ "develop" ]
+    branches: [ "prod" ]
   workflow_dispatch:
 
 permissions:
